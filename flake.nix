@@ -15,6 +15,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             k3d
+            helm
             kubectl
             kubernetes-helm
             fluxcd
