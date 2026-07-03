@@ -12,7 +12,7 @@ spec:
       version: "0.7.x"
       sourceRef:
         kind: HelmRepository
-        name: garage-registry
+        name: datahub-registry
         namespace: flux-system
   values:
     image:
