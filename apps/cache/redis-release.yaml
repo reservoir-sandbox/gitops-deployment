@@ -14,7 +14,7 @@ spec:
         kind: HelmRepository
         name: bitnami-registry
         namespace: flux-system
-values:
+  values:
     image:
       tag: 8.8.0
 
