@@ -20,7 +20,6 @@ spec:
         auth:
           database: database
           username: db_user
-          password: "SuperSecretChangeMe123!"
     primary:
       persistence:
         enabled: true

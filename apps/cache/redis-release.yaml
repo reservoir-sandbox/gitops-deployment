@@ -1,0 +1,39 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: redis-cache
+  namespace: apps
+spec:
+  interval: 10m
+  releaseName: redis
+  chart:
+    spec:
+      chart: redis
+      version: "27.x.x"
+      sourceRef:
+        kind: HelmRepository
+        name: bitnami-registry
+        namespace: flux-system
+values:
+    image:
+      tag: 8.8.0
+
+    architecture: standalone
+
+    auth:
+      enabled: true
+
+    master:
+      persistence:
+        enabled: true
+        size: 2Gi
+        storageClass: "local-path"
+        path: /bitnami/redis/data
+
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 100m
+          memory: 64Mi
