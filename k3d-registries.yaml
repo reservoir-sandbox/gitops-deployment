@@ -1,0 +1,5 @@
+mirrors:
+  "docker.io":
+    endpoint:
+      - "https://gcr.io"
+      - "https://daocloud.io"
