@@ -8,22 +8,13 @@ spec:
   releaseName: ingress-nginx
   chart:
     spec:
-      chart: ingress-nginx
-      version: "4.11.3"
+      chart: nginx
+      version: "18.x.x"
       sourceRef:
         kind: HelmRepository
-        name: ingress-nginx-registry
+        name: bitnami-registry
         namespace: flux-system
   values:
-    controller:
-      service:
-        type: LoadBalancer
-      metrics:
-        enabled: false
-      resources:
-        limits:
-          cpu: 500m
-          memory: 384Mi
-        requests:
-          cpu: 100m
-          memory: 128Mi
+    replicaCount: 1
+    service:
+      type: ClusterIP
