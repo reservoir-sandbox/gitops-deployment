@@ -1,0 +1,65 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: garage-s3
+  namespace: infrastructure
+spec:
+  interval: 15m
+  releaseName: garage
+  chart:
+    spec:
+      chart: garage
+      version: "2.3.2"
+      sourceRef:
+        kind: HelmRepository
+        name: garage-registry
+        namespace: flux-system
+  values:
+    image:
+      repository: dxflrs/garage
+      tag: v2.1.0
+      pullPolicy: IfNotPresent
+
+    deployment:
+      kind: StatefulSet
+      replicaCount: 1
+
+    podSecurityContext:
+      fsGroup: 1001
+    securityContext:
+      runAsUser: 1001
+      runAsGroup: 1001
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+
+    garage:
+      s3:
+        api:
+          region: "local-cluster"
+          rootDomain: ""
+
+      admin:
+        token:
+          secret:
+            create: true
+            name: "garage-admin-token"
+
+    persistence:
+      meta:
+        enabled: true
+        size: 1Gi
+        storageClass: "local-path"
+        mountPath: "/var/lib/garage/meta"
+      data:
+        enabled: true
+        size: 10Gi
+        storageClass: "local-path"
+        mountPath: "/var/lib/garage/data"
+
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi

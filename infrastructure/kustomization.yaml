@@ -3,4 +3,6 @@ kind: Kustomization
 resources:
   - security/namespaces.yaml
   - sources/bitnami-registry.yaml
+  - sources/garage-registry.yaml
   - ingress/nginx-release.yaml
+  - s3/garage-s3-release.yaml
