@@ -15,9 +15,6 @@ spec:
         name: bitnami-registry
         namespace: flux-system
   values:
-    image:
-      tag: 8.8.0
-
     architecture: standalone
 
     auth:
