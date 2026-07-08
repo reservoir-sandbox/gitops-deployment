@@ -17,7 +17,7 @@ spec:
   values:
     image:
       repository: ghcr.io/reservoir-sandbox/frontend
-      tag: "ce9a6360c9a9add0d24f9970672e4f1d969010ed"
+      tag: "af314372b9bd5f3111f7a51130dfa8ff12661ce6"
       pullPolicy: IfNotPresent
     service:
       type: ClusterIP
