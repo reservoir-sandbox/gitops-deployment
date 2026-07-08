@@ -4,5 +4,6 @@ resources:
   - security/namespaces.yaml
   - sources/bitnami-registry.yaml
   - sources/datahub-registry.yaml
+  - sources/helm-charts.yaml
   - ingress/nginx-release.yaml
   - s3/garage-s3-release.yaml
