@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - database/postgres-release.yaml
   - cache/redis-release.yaml
-  - frontend/frontend-release.yaml
+  - frontend
