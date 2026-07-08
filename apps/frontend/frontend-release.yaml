@@ -15,6 +15,8 @@ spec:
         name: helm-charts
         namespace: flux-system
   values:
+    imagePullSecrets:
+      - name: ghcr-secret
     image:
       repository: ghcr.io/reservoir-sandbox/frontend
       tag: "af314372b9bd5f3111f7a51130dfa8ff12661ce6"
