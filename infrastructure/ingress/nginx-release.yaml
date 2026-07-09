@@ -19,3 +19,5 @@ spec:
       replicaCount: 1
       service:
         type: LoadBalancer
+      config:
+        allow-snippet-annotations: "true"
