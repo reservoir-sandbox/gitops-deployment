@@ -1,0 +1,22 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: backend
+  namespace: apps
+spec:
+  interval: 10m
+  releaseName: backend
+  chart:
+    spec:
+      chart: backend
+      version: "0.1.0" # Will be automatically bumped by your CI pipeline
+      sourceRef:
+        kind: HelmRepository
+        name: helm-charts
+        namespace: flux-system
+  values:
+    # Overriding only dynamic runtime values via GitOps
+    image:
+      repository: ghcr.io/reservoir-sandbox/backend
+      tag: "af314372b9bd5f3111f7a51130dfa8ff12661ce6" # Example app commit SHA
+      pullPolicy: IfNotPresent

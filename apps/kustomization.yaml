@@ -4,3 +4,4 @@ resources:
   - database/postgres-release.yaml
   - cache/redis-release.yaml
   - frontend/frontend-release.yaml
+  - backend/backend-release.yaml
