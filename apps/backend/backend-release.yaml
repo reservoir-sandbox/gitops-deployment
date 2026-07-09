@@ -18,5 +18,5 @@ spec:
     # Overriding only dynamic runtime values via GitOps
     image:
       repository: ghcr.io/reservoir-sandbox/backend
-      tag: "34f2fa443c502c8ae81f722fd285fa3f9783fb53" # Example app commit SHA
+      tag: "699a6b9b11aca0739ca63405cb49fa3835a22188" # Example app commit SHA
       pullPolicy: IfNotPresent
