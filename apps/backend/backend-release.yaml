@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: backend
-      version: "0.1.5" # Will be automatically bumped by your CI pipeline
+      version: "0.1.6" # Will be automatically bumped by your CI pipeline
       sourceRef:
         kind: HelmRepository
         name: helm-charts
