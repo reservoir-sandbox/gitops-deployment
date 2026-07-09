@@ -8,19 +8,14 @@ spec:
   releaseName: ingress-nginx
   chart:
     spec:
-      chart: nginx-ingress-controller
-      version: "25.x.x"
+      chart: ingress-nginx
+      version: "4.x.x"
       sourceRef:
         kind: HelmRepository
-        name: bitnami-registry
+        name: ingress-nginx-registry
         namespace: flux-system
   values:
-    replicaCount: 1
-    service:
-      type: LoadBalancer
-      ports:
-        http: 80
-        https: 443
-      nodePorts:
-        http: 30080
-        https: 30443
+    controller:
+      replicaCount: 1
+      service:
+        type: LoadBalancer
