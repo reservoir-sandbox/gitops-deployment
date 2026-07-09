@@ -8,7 +8,7 @@ spec:
   releaseName: ingress-nginx
   chart:
     spec:
-      chart: nginx
+      chart: nginx-ingress-controller
       version: "25.x.x"
       sourceRef:
         kind: HelmRepository
@@ -17,10 +17,10 @@ spec:
   values:
     replicaCount: 1
     service:
-      type: NodePort
+      type: LoadBalancer
       ports:
         http: 80
         https: 443
       nodePorts:
-        http: 30080 
+        http: 30080
         https: 30443
