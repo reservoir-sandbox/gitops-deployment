@@ -17,7 +17,7 @@ workers:
     tag: 9e4e23de6f66fc767fb6bdd1e23ee410b623910e
   ml:
     repository: ghcr.io/reservoir-sandbox/ml-models
-    tag: 6577ccfdd739b2a67d5aa0997996eb610e50ccd1
+    tag: b00ab4e0f29fc43b8f93ed1ba1ec97f07bb7c10a
 imagePullPolicy: IfNotPresent
 workerCallbackSecret:
   name: worker-callback-secret
