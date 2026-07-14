@@ -1,0 +1,30 @@
+# Throwaway connectivity-test pod. NOT wired into any kustomization.yaml —
+# apply/delete it manually, it is never part of the cluster's desired state.
+#
+# Originally used to diagnose why the backend's egress NetworkPolicy rule
+# targeting the `kubernetes` Service ClusterIP (10.43.0.1:443) still got
+# "Connection refused": this k3s cluster's embedded NetworkPolicy engine
+# enforces on the post-DNAT destination (the real node/API-server IP:6443),
+# not the ClusterIP. Running this unrestricted pod (no NetworkPolicy selects
+# it) alongside an `kubectl exec`'d socket test from the restricted pod is
+# what isolated "policy problem" from "the target is actually unreachable".
+#
+# Edit the `curl` target below to test a different host:port.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: apitest
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: curlimages/curl:8.11.1
+      command:
+        - curl
+        - -sk
+        - https://10.43.0.1:443/healthz
+        - -m
+        - "5"
+        - -w
+        - "\nHTTP:%{http_code}\n"
