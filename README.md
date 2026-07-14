@@ -50,7 +50,12 @@ access to the VM.
 
 1. **Install k3s on the VM** (Traefik disabled — we run our own ingress-nginx):
    ```sh
-   curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
+   curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server \
+  --disable=traefik \
+  --disable=servicelb \
+  --disable=local-storage \
+  --disable=metrics-server \
+  --kubelet-arg=--cgroup-driver=systemd" sh -
    ```
    Copy `/etc/rancher/k3s/k3s.yaml` back to your workstation as your
    kubeconfig (swap `127.0.0.1` for the VM's address), or run the remaining
