@@ -9,6 +9,8 @@ resources:
   - frontend/ingress.yaml
   - frontend/networkpolicy.yaml
   - backend/configmap.yaml
+  - backend/serviceaccount.yaml
+  - backend/worker-callback-secret.yaml
   - backend/deployment.yaml
   - backend/service.yaml
   - backend/ingress.yaml

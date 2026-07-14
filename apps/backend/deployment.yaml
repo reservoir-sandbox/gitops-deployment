@@ -18,6 +18,7 @@ spec:
         app.kubernetes.io/name: backend
         app.kubernetes.io/instance: backend
     spec:
+      serviceAccountName: backend
       initContainers:
         - name: alembic-migrate
           image: ghcr.io/reservoir-sandbox/backend:25150aef640ae4b6ba6d0f79c866ce8aefe5ae48
@@ -98,6 +99,11 @@ spec:
               value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-db-postgresql:5432/database"
             - name: REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@redis-master:6379/0"
+            - name: WORKER_CALLBACK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: worker-callback-secret
+                  key: token
           resources:
             requests:
               cpu: 100m

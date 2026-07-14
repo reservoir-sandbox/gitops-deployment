@@ -1,0 +1,6 @@
+apiVersion: v2
+name: job-to-run
+description: One-shot analysis worker Job, launched per JobTask by the backend's K8sJobLauncher
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

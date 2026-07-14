@@ -10,3 +10,6 @@ resources:
   - ingress/nginx-release.yaml
   - s3/garage-s3-release.yaml
   - s3/garage-backend-key-init-job.yaml
+  - jobs/namespace.yaml
+  - jobs/rbac.yaml
+  - jobs/worker-callback-secret.yaml

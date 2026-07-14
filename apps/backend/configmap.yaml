@@ -9,3 +9,6 @@ metadata:
 data:
   S3_ENDPOINT_URL: "http://garage.infrastructure.svc.cluster.local:3900"
   S3_BUCKET_NAME: "reservoir-backend"
+  JOB_LAUNCHER: "k8s"
+  JOBS_NAMESPACE: "jobs"
+  BACKEND_CALLBACK_URL: "http://backend.apps.svc.cluster.local:8000"

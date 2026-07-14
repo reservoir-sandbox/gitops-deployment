@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-{{ .Values.taskType }}-{{ .Values.taskId }}
+  labels:
+    app.kubernetes.io/name: job-to-run
+    app.kubernetes.io/instance: job-{{ .Values.taskType }}-{{ .Values.taskId }}
+    reservoir.io/task-id: "{{ .Values.taskId }}"
+    reservoir.io/task-type: "{{ .Values.taskType }}"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: job-to-run
+        app.kubernetes.io/instance: job-{{ .Values.taskType }}-{{ .Values.taskId }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: TASK_ID
+              value: "{{ .Values.taskId }}"
+            - name: TASK_TYPE
+              value: "{{ .Values.taskType }}"
+            - name: BACKEND_CALLBACK_URL
+              value: "{{ .Values.backendCallbackUrl }}"
+            - name: S3_ENDPOINT_URL
+              value: "{{ .Values.s3EndpointUrl }}"
+            - name: S3_BUCKET_NAME
+              value: "{{ .Values.s3BucketName }}"
+            - name: OBJECT_KEY
+              value: "{{ .Values.objectKey }}"
+            - name: SHA256
+              value: "{{ .Values.sha256 }}"
+            - name: WORKER_CALLBACK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.workerCallbackSecret.name }}
+                  key: {{ .Values.workerCallbackSecret.key }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              echo "job-to-run stub: taskId=$TASK_ID taskType=$TASK_TYPE objectKey=$OBJECT_KEY sha256=$SHA256"
+              echo "s3EndpointUrl=$S3_ENDPOINT_URL s3BucketName=$S3_BUCKET_NAME"
+              sleep 2
+              curl -sf -X POST "$BACKEND_CALLBACK_URL/api/v1/internal/tasks/$TASK_ID/callback" \
+                -H "X-Worker-Token: $WORKER_CALLBACK_SECRET" \
+                -H "Content-Type: application/json" \
+                -d "{\"status\":\"completed\",\"result\":{\"stub\":true,\"taskType\":\"$TASK_TYPE\"}}"
+              echo "callback sent for task_id=$TASK_ID"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
