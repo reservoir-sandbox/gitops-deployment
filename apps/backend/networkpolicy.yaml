@@ -34,11 +34,18 @@ spec:
           port: 8000
   egress:
     - to:
+        # Both the kubernetes Service ClusterIP (pre-DNAT) and the real node/API
+        # server IP:6443 (post-DNAT) are needed: this cluster's NetworkPolicy
+        # enforcement evaluates the post-DNAT destination for Service traffic.
         - ipBlock:
             cidr: 10.43.0.1/32
+        - ipBlock:
+            cidr: 10.93.27.36/32
       ports:
         - protocol: TCP
           port: 443
+        - protocol: TCP
+          port: 6443
     - to:
         - namespaceSelector:
             matchLabels:
