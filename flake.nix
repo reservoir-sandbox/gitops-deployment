@@ -18,6 +18,8 @@
             kubectl
             kubernetes-helm
             fluxcd
+            sops
+            age
           ];
 
           shellHook = ''

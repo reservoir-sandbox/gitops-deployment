@@ -6,6 +6,7 @@ resources:
   - sources/datahub-registry.yaml
   - sources/helm-charts.yaml
   - sources/kubernetes-nginx-repo.yaml
+  - storage/local-path-storageclass.yaml
   - ingress/nginx-release.yaml
   - s3/garage-backend-key-secret.yaml
   - s3/garage-s3-release.yaml
