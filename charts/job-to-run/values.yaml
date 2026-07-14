@@ -11,7 +11,7 @@ sha256: ""
 workers:
   static:
     repository: ghcr.io/reservoir-sandbox/reverse
-    tag: a3db0544ffb57ccba49a5b031711e7047d663c62
+    tag: cbe715ecaa60338c5b9b89b3aa22a19f27bc56b3
   sandbox:
     repository: ghcr.io/reservoir-sandbox/auto-yara
     tag: 9e4e23de6f66fc767fb6bdd1e23ee410b623910e
