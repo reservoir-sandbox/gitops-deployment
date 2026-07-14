@@ -23,6 +23,9 @@ spec:
           image: ghcr.io/reservoir-sandbox/backend:699a6b9b11aca0739ca63405cb49fa3835a22188
           imagePullPolicy: IfNotPresent
           command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: backend-config
           env:
             - name: POSTGRES_USER
               value: "db_user"
@@ -31,8 +34,25 @@ spec:
                 secretKeyRef:
                   name: postgres-db-postgresql
                   key: password
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: redis-password
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backend-s3-credentials
+                  key: access-key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: backend-s3-credentials
+                  key: secret-key
             - name: DATABASE_URL
               value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-db-postgresql:5432/database"
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis-master:6379/0"
           resources:
             requests:
               cpu: 100m
