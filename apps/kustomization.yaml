@@ -3,5 +3,13 @@ kind: Kustomization
 resources:
   - database/postgres-release.yaml
   - cache/redis-release.yaml
-  - frontend/frontend-release.yaml
-  - backend/backend-release.yaml
+  - frontend/configmap.yaml
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+  - frontend/ingress.yaml
+  - frontend/networkpolicy.yaml
+  - backend/configmap.yaml
+  - backend/deployment.yaml
+  - backend/service.yaml
+  - backend/ingress.yaml
+  - backend/networkpolicy.yaml
