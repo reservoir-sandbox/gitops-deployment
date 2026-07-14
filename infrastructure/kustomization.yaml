@@ -8,8 +8,8 @@ resources:
   - sources/kubernetes-nginx-repo.yaml
   - storage/local-path-storageclass.yaml
   - ingress/nginx-release.yaml
-  - s3/garage-s3-release.yaml
-  - s3/garage-backend-key-init-job.yaml
   - jobs/namespace.yaml
   - jobs/rbac.yaml
   - jobs/worker-callback-secret.yaml
+  - s3/garage-s3-release.yaml
+  - s3/garage-backend-key-init-job.yaml

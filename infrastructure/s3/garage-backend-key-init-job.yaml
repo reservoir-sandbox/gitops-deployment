@@ -32,6 +32,36 @@ roleRef:
   name: garage-backend-key-init
   apiGroup: rbac.authorization.k8s.io
 ---
+# Same Garage key is also needed by analysis worker Jobs (charts/job-to-run),
+# which run in the jobs namespace - mirror the Secret there too.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: garage-backend-key-init
+  namespace: jobs
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "update", "patch"]
+    resourceNames: ["backend-s3-credentials"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: garage-backend-key-init
+  namespace: jobs
+subjects:
+  - kind: ServiceAccount
+    name: garage-backend-key-init
+    namespace: infrastructure
+roleRef:
+  kind: Role
+  name: garage-backend-key-init
+  apiGroup: rbac.authorization.k8s.io
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -70,6 +100,7 @@ spec:
               KEY_NAME="backend"
               SECRET_NAME="backend-s3-credentials"
               SECRET_NAMESPACE="apps"
+              SECRET_NAMESPACES="apps jobs"
 
               auth() {
                 curl -sf -H "Authorization: Bearer $GARAGE_ADMIN_TOKEN" "$@"
@@ -124,13 +155,14 @@ spec:
                 -d "{\"bucketId\":\"$BUCKET_ID\",\"accessKeyId\":\"$ACCESS_KEY_ID\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":true}}" \
                 "$ADMIN_URL/v2/AllowBucketKey" >/dev/null
 
-              echo "Writing credentials to Secret $SECRET_NAMESPACE/$SECRET_NAME..."
-              cat <<YAML | kubectl apply -f -
+              for ns in $SECRET_NAMESPACES; do
+                echo "Writing credentials to Secret $ns/$SECRET_NAME..."
+                cat <<YAML | kubectl apply -f -
               apiVersion: v1
               kind: Secret
               metadata:
                 name: $SECRET_NAME
-                namespace: $SECRET_NAMESPACE
+                namespace: $ns
                 labels:
                   app.kubernetes.io/name: backend
                   app.kubernetes.io/instance: backend
@@ -141,6 +173,7 @@ spec:
                 access-key: "$ACCESS_KEY_ID"
                 secret-key: "$SECRET_ACCESS_KEY"
               YAML
+              done
 
               echo "Done."
           resources:

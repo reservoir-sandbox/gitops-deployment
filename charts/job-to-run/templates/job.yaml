@@ -19,8 +19,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: worker
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ (index .Values.workers .Values.taskType).repository }}:{{ (index .Values.workers .Values.taskType).tag }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           env:
             - name: TASK_ID
               value: "{{ .Values.taskId }}"
@@ -32,7 +32,7 @@ spec:
               value: "{{ .Values.s3EndpointUrl }}"
             - name: S3_BUCKET_NAME
               value: "{{ .Values.s3BucketName }}"
-            - name: OBJECT_KEY
+            - name: S3_OBJECT_KEY
               value: "{{ .Values.objectKey }}"
             - name: SHA256
               value: "{{ .Values.sha256 }}"
@@ -41,18 +41,15 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.workerCallbackSecret.name }}
                   key: {{ .Values.workerCallbackSecret.key }}
-          command:
-            - /bin/sh
-            - -c
-            - |
-              set -eu
-              echo "job-to-run stub: taskId=$TASK_ID taskType=$TASK_TYPE objectKey=$OBJECT_KEY sha256=$SHA256"
-              echo "s3EndpointUrl=$S3_ENDPOINT_URL s3BucketName=$S3_BUCKET_NAME"
-              sleep 2
-              curl -sf -X POST "$BACKEND_CALLBACK_URL/api/v1/internal/tasks/$TASK_ID/callback" \
-                -H "X-Worker-Token: $WORKER_CALLBACK_SECRET" \
-                -H "Content-Type: application/json" \
-                -d "{\"status\":\"completed\",\"result\":{\"stub\":true,\"taskType\":\"$TASK_TYPE\"}}"
-              echo "callback sent for task_id=$TASK_ID"
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3Credentials.name }}
+                  key: {{ .Values.s3Credentials.accessKeyKey }}
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3Credentials.name }}
+                  key: {{ .Values.s3Credentials.secretKeyKey }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

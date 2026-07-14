@@ -16,6 +16,9 @@ merged to `main` rolls out to both.
 - `infrastructure/` — namespaces, Helm repo sources, ingress-nginx,
   StorageClass, Garage (S3) and its bucket/key provisioning job.
 - `apps/` — frontend, backend, Postgres, Redis.
+- `charts/job-to-run/` — the one Helm chart used for all three analysis
+  worker `Job`s the backend launches per sample (see
+  [Analysis worker images](#analysis-worker-images-chartsjob-to-run)).
 - `clusters/<name>/flux-system/` — per-cluster Flux bootstrap + the two
   top-level `Kustomization`s (`cluster-infrastructure`, `cluster-apps`).
 - `.sops.yaml` — encryption rule: any `*-secret.yaml` file has its
@@ -111,6 +114,43 @@ Local-path volumes live on a single node's disk with no redundancy. For
 anything you can't afford to lose (Postgres data, Garage bucket contents),
 set up off-box backups — e.g. a CronJob doing `pg_dump` into the `garage`
 bucket, or periodic volume snapshots — this repo doesn't do that yet.
+
+## Analysis worker images (`charts/job-to-run`)
+
+Each sample upload spawns three one-shot Kubernetes `Job`s — one per
+`TaskType` (`static`, `sandbox`, `ml`) — via a Flux `HelmRelease` that the
+backend creates at runtime (see `backend`'s `K8sJobLauncher`). All three use
+the single chart at `charts/job-to-run`, which picks the worker image by task
+type from `charts/job-to-run/values.yaml`:
+
+| Task type | Source repo | What it does |
+|---|---|---|
+| `static` | `reverse` | ELF structural analysis (headers, sections, disassembly, checksec) |
+| `sandbox` | `auto-yara` | Generates a YARA detection rule from the sample |
+| `ml` | `ml-models` | Runs the baseline clean/suspicious classifier |
+
+Each repo owns its own `Dockerfile` and `worker_entrypoint.py` (or, for
+`reverse`, `elf_analyzer.py`) implementing the same contract: download the
+sample from S3 via `S3_OBJECT_KEY`, run the analysis, upload the report to S3
+if it's over 1MB, then `POST` the result to the backend's internal callback
+endpoint using `WORKER_CALLBACK_SECRET`. Required env vars (`S3_ACCESS_KEY`,
+`S3_SECRET_KEY`, `S3_ENDPOINT_URL`, `S3_BUCKET_NAME`, `S3_OBJECT_KEY`,
+`TASK_ID`, `BACKEND_CALLBACK_URL`, `WORKER_CALLBACK_SECRET`) are injected by
+the chart's `templates/job.yaml`; S3 credentials come from the
+`backend-s3-credentials` Secret, which
+`infrastructure/s3/garage-backend-key-init-job.yaml` mirrors into both the
+`apps` and `jobs` namespaces.
+
+**Updating a worker script**: edit the relevant repo (`reverse`,
+`auto-yara`, or `ml-models`), push to `main`. Each has a `.github/workflows/ci.yml`
+that builds and pushes the image to `ghcr.io/reservoir-sandbox/<repo>:<sha>`,
+then opens a commit against **this** repo bumping
+`charts/job-to-run/values.yaml`'s `workers.<taskType>.tag` — the same
+auto-tag-bump pattern the `backend` repo uses for its own deployment. Flux
+picks it up from there; no manual manifest edits needed. Each of those three
+repos needs a `PAT_TOKEN` secret (repo-scoped GitHub PAT with write access to
+`gitops-deployment`) configured in its own GitHub Actions settings, same as
+`backend` already has.
 
 ## Known gap
 
