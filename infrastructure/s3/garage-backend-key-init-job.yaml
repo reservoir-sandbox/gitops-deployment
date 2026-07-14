@@ -1,0 +1,152 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: garage-backend-key-init
+  namespace: infrastructure
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: garage-backend-key-init
+  namespace: apps
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "update", "patch"]
+    resourceNames: ["backend-s3-credentials"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: garage-backend-key-init
+  namespace: apps
+subjects:
+  - kind: ServiceAccount
+    name: garage-backend-key-init
+    namespace: infrastructure
+roleRef:
+  kind: Role
+  name: garage-backend-key-init
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: garage-backend-key-init
+  namespace: infrastructure
+  labels:
+    app.kubernetes.io/name: garage-backend-key-init
+spec:
+  backoffLimit: 20
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: garage-backend-key-init
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: garage-backend-key-init
+      containers:
+        - name: init
+          image: alpine/k8s:1.32.3
+          env:
+            - name: GARAGE_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: garage-secret
+                  key: adminToken
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              ADMIN_URL="http://garage.infrastructure.svc.cluster.local:3903"
+              BUCKET_NAME="reservoir-backend"
+              KEY_NAME="backend"
+              SECRET_NAME="backend-s3-credentials"
+              SECRET_NAMESPACE="apps"
+
+              auth() {
+                curl -sf -H "Authorization: Bearer $GARAGE_ADMIN_TOKEN" "$@"
+              }
+
+              echo "Waiting for Garage admin API..."
+              i=0
+              until auth "$ADMIN_URL/v2/ListBuckets" >/dev/null 2>&1; do
+                i=$((i + 1))
+                if [ "$i" -ge 60 ]; then
+                  echo "Timed out waiting for Garage admin API"
+                  exit 1
+                fi
+                sleep 5
+              done
+
+              echo "Ensuring bucket $BUCKET_NAME exists..."
+              if ! auth "$ADMIN_URL/v2/GetBucketInfo?globalAlias=$BUCKET_NAME" | grep -q '"id"'; then
+                auth -X POST -H "Content-Type: application/json" \
+                  -d "{\"globalAlias\":\"$BUCKET_NAME\"}" \
+                  "$ADMIN_URL/v2/CreateBucket" >/dev/null
+                echo "Created bucket $BUCKET_NAME"
+              else
+                echo "Bucket $BUCKET_NAME already exists"
+              fi
+
+              BUCKET_ID=$(auth "$ADMIN_URL/v2/GetBucketInfo?globalAlias=$BUCKET_NAME" \
+                | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+
+              # Reuse the existing key if the Secret already references one that Garage still
+              # recognizes, so re-running this Job doesn't rotate credentials unnecessarily.
+              EXISTING_KEY_ID=""
+              if kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" >/dev/null 2>&1; then
+                EXISTING_KEY_ID=$(kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" -o jsonpath='{.data.access-key}' | base64 -d)
+              fi
+
+              if [ -n "$EXISTING_KEY_ID" ] && auth "$ADMIN_URL/v2/GetKeyInfo?id=$EXISTING_KEY_ID" | grep -q '"accessKeyId"'; then
+                echo "Reusing existing key $EXISTING_KEY_ID"
+                ACCESS_KEY_ID="$EXISTING_KEY_ID"
+                SECRET_ACCESS_KEY=$(kubectl get secret "$SECRET_NAME" -n "$SECRET_NAMESPACE" -o jsonpath='{.data.secret-key}' | base64 -d)
+              else
+                echo "Creating new Garage key $KEY_NAME..."
+                RESP=$(auth -X POST -H "Content-Type: application/json" \
+                  -d "{\"name\":\"$KEY_NAME\"}" \
+                  "$ADMIN_URL/v2/CreateKey")
+                ACCESS_KEY_ID=$(echo "$RESP" | sed -n 's/.*"accessKeyId": *"\([^"]*\)".*/\1/p' | head -1)
+                SECRET_ACCESS_KEY=$(echo "$RESP" | sed -n 's/.*"secretAccessKey": *"\([^"]*\)".*/\1/p' | head -1)
+              fi
+
+              echo "Granting bucket permissions to key $ACCESS_KEY_ID..."
+              auth -X POST -H "Content-Type: application/json" \
+                -d "{\"bucketId\":\"$BUCKET_ID\",\"accessKeyId\":\"$ACCESS_KEY_ID\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":true}}" \
+                "$ADMIN_URL/v2/AllowBucketKey" >/dev/null
+
+              echo "Writing credentials to Secret $SECRET_NAMESPACE/$SECRET_NAME..."
+              cat <<YAML | kubectl apply -f -
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: $SECRET_NAME
+                namespace: $SECRET_NAMESPACE
+                labels:
+                  app.kubernetes.io/name: backend
+                  app.kubernetes.io/instance: backend
+                annotations:
+                  kustomize.toolkit.fluxcd.io/prune: disabled
+              type: Opaque
+              stringData:
+                access-key: "$ACCESS_KEY_ID"
+                secret-key: "$SECRET_ACCESS_KEY"
+              YAML
+
+              echo "Done."
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

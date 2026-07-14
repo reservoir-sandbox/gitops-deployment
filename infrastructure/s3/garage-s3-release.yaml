@@ -5,6 +5,7 @@ metadata:
   namespace: infrastructure
 spec:
   interval: 15m
+  timeout: 15m
   releaseName: garage
   chart:
     spec:
@@ -55,17 +56,6 @@ spec:
 
       buckets:
         - name: reservoir-backend
-
-      keys:
-        backend:
-          secretName: garage-backend-key
-          keyId: keyId
-          secretKey: secretKey
-          buckets:
-            - name: reservoir-backend
-              read: true
-              write: true
-              owner: true
 
     persistence:
       meta:
