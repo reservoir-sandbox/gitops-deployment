@@ -5,6 +5,7 @@ metadata:
   namespace: apps
 spec:
   interval: 10m
+  timeout: 15m
   releaseName: redis
   chart:
     spec:
