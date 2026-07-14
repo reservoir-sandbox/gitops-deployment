@@ -9,6 +9,7 @@ resources:
   - frontend/ingress.yaml
   - frontend/networkpolicy.yaml
   - backend/configmap.yaml
+  - backend/s3-secret.yaml
   - backend/deployment.yaml
   - backend/service.yaml
   - backend/ingress.yaml

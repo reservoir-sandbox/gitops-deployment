@@ -33,6 +33,8 @@ spec:
       allowPrivilegeEscalation: false
 
     garage:
+      replicationFactor: "1"
+
       s3:
         api:
           region: "local-cluster"
@@ -43,6 +45,27 @@ spec:
           secret:
             create: true
             name: "garage-admin-token"
+
+    clusterConfig:
+      enabled: true
+
+      layout:
+        enabled: true
+        zone: dc1
+
+      buckets:
+        - name: reservoir-backend
+
+      keys:
+        backend:
+          secretName: garage-backend-key
+          keyId: keyId
+          secretKey: secretKey
+          buckets:
+            - name: reservoir-backend
+              read: true
+              write: true
+              owner: true
 
     persistence:
       meta:

@@ -7,4 +7,5 @@ resources:
   - sources/helm-charts.yaml
   - sources/kubernetes-nginx-repo.yaml
   - ingress/nginx-release.yaml
+  - s3/garage-backend-key-secret.yaml
   - s3/garage-s3-release.yaml
