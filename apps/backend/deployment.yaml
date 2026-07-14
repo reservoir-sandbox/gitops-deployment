@@ -21,7 +21,7 @@ spec:
       serviceAccountName: backend
       initContainers:
         - name: alembic-migrate
-          image: ghcr.io/reservoir-sandbox/backend:a9c041c4cac69c904c3e85e471c4c6f2981b6b9e
+          image: ghcr.io/reservoir-sandbox/backend:842234f100adb59e36ff89b60f181ef976cc84bb
           imagePullPolicy: IfNotPresent
           command: ["alembic", "upgrade", "head"]
           envFrom:
@@ -63,7 +63,7 @@ spec:
               memory: 256Mi
       containers:
         - name: backend
-          image: ghcr.io/reservoir-sandbox/backend:a9c041c4cac69c904c3e85e471c4c6f2981b6b9e
+          image: ghcr.io/reservoir-sandbox/backend:842234f100adb59e36ff89b60f181ef976cc84bb
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
