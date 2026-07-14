@@ -117,29 +117,63 @@ bucket, or periodic volume snapshots — this repo doesn't do that yet.
 
 ## Analysis worker images (`charts/job-to-run`)
 
-Each sample upload spawns three one-shot Kubernetes `Job`s — one per
-`TaskType` (`static`, `sandbox`, `ml`) — via a Flux `HelmRelease` that the
-backend creates at runtime (see `backend`'s `K8sJobLauncher`). All three use
-the single chart at `charts/job-to-run`, which picks the worker image by task
+Each sample upload spawns one-shot Kubernetes `Job`s — one per `TaskType`
+(`static`, `sandbox`, `ml`) — via a Flux `HelmRelease` that the backend
+creates at runtime (see `backend`'s `K8sJobLauncher`). All three use the
+single chart at `charts/job-to-run`, which picks the worker image by task
 type from `charts/job-to-run/values.yaml`:
 
 | Task type | Source repo | What it does |
 |---|---|---|
 | `static` | `reverse` | ELF structural analysis (headers, sections, disassembly, checksec) |
 | `sandbox` | `auto-yara` | Generates a YARA detection rule from the sample |
-| `ml` | `ml-models` | Runs the baseline clean/suspicious classifier |
+| `ml` | `ml-models` | Forwards the static report to an external LLM summarizer and relays its verdict |
 
-Each repo owns its own `Dockerfile` and `worker_entrypoint.py` (or, for
-`reverse`, `elf_analyzer.py`) implementing the same contract: download the
-sample from S3 via `S3_OBJECT_KEY`, run the analysis, upload the report to S3
-if it's over 1MB, then `POST` the result to the backend's internal callback
-endpoint using `WORKER_CALLBACK_SECRET`. Required env vars (`S3_ACCESS_KEY`,
-`S3_SECRET_KEY`, `S3_ENDPOINT_URL`, `S3_BUCKET_NAME`, `S3_OBJECT_KEY`,
-`TASK_ID`, `BACKEND_CALLBACK_URL`, `WORKER_CALLBACK_SECRET`) are injected by
-the chart's `templates/job.yaml`; S3 credentials come from the
-`backend-s3-credentials` Secret, which
-`infrastructure/s3/garage-backend-key-init-job.yaml` mirrors into both the
-`apps` and `jobs` namespaces.
+`static` and `sandbox` launch immediately, in parallel, like any other task.
+`ml` does not — it consumes `static`'s output, so the backend only launches
+it once `static` reaches a terminal state
+(`JobService._maybe_launch_ml` in the backend repo). If `static` fails, `ml`
+is marked failed immediately with no Job launched (nothing to summarize).
+
+`static`/`sandbox` implement the shared worker contract: download the sample
+from S3 via `S3_OBJECT_KEY`, run the analysis, upload the report to S3 if
+it's over 1MB, then `POST` the result to the backend's internal callback
+endpoint using `WORKER_CALLBACK_SECRET`. `ml` skips the S3 sample download
+entirely — it never touches the raw binary — and instead reads the static
+report the backend hands it (`STATIC_REPORT` inline, or `STATIC_REPORT_S3_KEY`
+if the static report itself was too big to inline), POSTs it to
+`RESERVOIR_SUMMARIZER_URL/api/v1/summarize-static`, and relays the response
+verbatim as its own result (this is exactly the `MLReportData` shape the
+frontend's `MLReport` component expects — see `LLM_integration.md`).
+`yara_matches` is intentionally omitted from that request: `auto-yara`
+*generates* a rule from the sample, it doesn't *match* against a corpus of
+known signatures, so it has nothing in the shape the summarizer's optional
+`yara_matches` field expects.
+
+Common env vars (`S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_ENDPOINT_URL`,
+`S3_BUCKET_NAME`, `S3_OBJECT_KEY`, `TASK_ID`, `BACKEND_CALLBACK_URL`,
+`WORKER_CALLBACK_SECRET`) are injected by the chart's `templates/job.yaml`
+for every task type; S3 credentials come from the `backend-s3-credentials`
+Secret, which `infrastructure/s3/garage-backend-key-init-job.yaml` mirrors
+into both the `apps` and `jobs` namespaces. `RESERVOIR_SUMMARIZER_URL`,
+`RESERVOIR_SUMMARIZER_TIMEOUT_SECONDS`, `STATIC_REPORT`, and
+`STATIC_REPORT_S3_KEY` are only injected for `taskType: ml`.
+
+### LLM summarizer (external, not managed by this repo)
+
+The summarizer runs on a Yandex Cloud VM outside this cluster — see
+`LLM_integration.md` for the full DevOps handoff (systemd units, log
+locations, deploy process). This cluster is **not** in the Yandex VPC, so
+`charts/job-to-run/values.yaml`'s `summarizer.url` points at its **public**
+IP (`158.160.219.46:8000`), not the private one the guide recommends for
+same-VPC setups.
+
+**Manual step required, outside this repo**: the Yandex VM's security group
+must allow inbound TCP 8000 from this cluster's egress IP. Nothing here can
+configure that — it's Yandex Cloud console/CLI access on the VM owner's
+side. `infrastructure/jobs/networkpolicy.yaml` only controls the outbound
+side (cluster → VM); it doesn't help if the VM's own firewall still rejects
+the connection.
 
 **Updating a worker script**: edit the relevant repo (`reverse`,
 `auto-yara`, or `ml-models`), push to `main`. Each has a `.github/workflows/ci.yml`
@@ -151,6 +185,12 @@ picks it up from there; no manual manifest edits needed. Each of those three
 repos needs a `PAT_TOKEN` secret (repo-scoped GitHub PAT with write access to
 `gitops-deployment`) configured in its own GitHub Actions settings, same as
 `backend` already has.
+
+If two of these CI runs land within the same ~minute, the second's
+auto-commit push can lose a non-fast-forward race against the first (seen in
+practice) — check `gh run list --repo reservoir-sandbox/<repo>` after
+pushing more than one at once, and manually re-apply the tag bump in
+`charts/job-to-run/values.yaml` if a run failed on that step.
 
 ## Known gap
 

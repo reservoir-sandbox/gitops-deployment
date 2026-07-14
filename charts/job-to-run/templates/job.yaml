@@ -51,5 +51,15 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.s3Credentials.name }}
                   key: {{ .Values.s3Credentials.secretKeyKey }}
+            {{- if eq .Values.taskType "ml" }}
+            - name: RESERVOIR_SUMMARIZER_URL
+              value: "{{ .Values.summarizer.url }}"
+            - name: RESERVOIR_SUMMARIZER_TIMEOUT_SECONDS
+              value: "{{ .Values.summarizer.timeoutSeconds }}"
+            - name: STATIC_REPORT
+              value: {{ .Values.staticReport | toJson | quote }}
+            - name: STATIC_REPORT_S3_KEY
+              value: "{{ .Values.staticReportS3Key }}"
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

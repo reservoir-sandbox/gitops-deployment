@@ -5,6 +5,18 @@ s3EndpointUrl: ""
 s3BucketName: ""
 objectKey: ""
 sha256: ""
+# Only set by the backend when launching the ml task, once the static task
+# it depends on has completed - see JobService._maybe_launch_ml in the
+# backend repo. Exactly one of staticReport/staticReportS3Key is non-empty.
+staticReport: ""
+staticReportS3Key: ""
+
+# LLM summarizer (see LLM_integration.md) - external to this cluster, reached
+# over its public IP since the cluster isn't in the Yandex VPC. Its security
+# group must allow inbound TCP 8000 from this cluster's egress IP.
+summarizer:
+  url: "http://158.160.219.46:8000"
+  timeoutSeconds: 300
 # One entry per TaskType (app/enums/task_type.py in the backend repo): static,
 # sandbox, ml. Each maps to a worker image built by its own repo's CI
 # (reverse, auto-yara, ml-models respectively) - see the top-level README.

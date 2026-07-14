@@ -1,0 +1,56 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: job-to-run
+  namespace: jobs
+  labels:
+    app.kubernetes.io/name: job-to-run
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: job-to-run
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infrastructure
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: garage
+      ports:
+        - protocol: TCP
+          port: 3900
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: apps
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: backend
+      ports:
+        - protocol: TCP
+          port: 8000
+    - to:
+        # LLM summarizer on an external Yandex VM (see LLM_integration.md) -
+        # only reachable over its public IP since this cluster isn't in the
+        # Yandex VPC. Only the ml task actually calls this; static/sandbox
+        # workers just never use the egress.
+        - ipBlock:
+            cidr: 158.160.219.46/32
+      ports:
+        - protocol: TCP
+          port: 8000
