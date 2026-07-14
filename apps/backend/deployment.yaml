@@ -18,6 +18,28 @@ spec:
         app.kubernetes.io/name: backend
         app.kubernetes.io/instance: backend
     spec:
+      initContainers:
+        - name: alembic-migrate
+          image: ghcr.io/reservoir-sandbox/backend:699a6b9b11aca0739ca63405cb49fa3835a22188
+          imagePullPolicy: IfNotPresent
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              value: "db_user"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-db-postgresql
+                  key: password
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-db-postgresql:5432/database"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
       containers:
         - name: backend
           image: ghcr.io/reservoir-sandbox/backend:699a6b9b11aca0739ca63405cb49fa3835a22188
