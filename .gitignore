@@ -1,3 +1,4 @@
 .direnv/
 *.sh
 .claude
+SECRET_KEY_SOPS.txt
