@@ -5,33 +5,28 @@ s3EndpointUrl: ""
 s3BucketName: ""
 objectKey: ""
 sha256: ""
-
 # One entry per TaskType (app/enums/task_type.py in the backend repo): static,
 # sandbox, ml. Each maps to a worker image built by its own repo's CI
 # (reverse, auto-yara, ml-models respectively) - see the top-level README.
 workers:
   static:
     repository: ghcr.io/reservoir-sandbox/reverse
-    tag: latest
+    tag: ec6153154491bb17f4a60908032d76db721e7ac1
   sandbox:
     repository: ghcr.io/reservoir-sandbox/auto-yara
     tag: latest
   ml:
     repository: ghcr.io/reservoir-sandbox/ml-models
     tag: latest
-
 imagePullPolicy: IfNotPresent
-
 workerCallbackSecret:
   name: worker-callback-secret
   key: token
-
 # Mirrored into the jobs namespace by infrastructure/s3/garage-backend-key-init-job.yaml
 s3Credentials:
   name: backend-s3-credentials
   accessKeyKey: access-key
   secretKeyKey: secret-key
-
 resources:
   requests:
     cpu: 200m
