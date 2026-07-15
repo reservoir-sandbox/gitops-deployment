@@ -25,7 +25,7 @@ workers:
     tag: 2861f3475732a5b8e5013853113ee352f75b01ba
   sandbox:
     repository: ghcr.io/reservoir-sandbox/auto-yara
-    tag: 1018cf940644994118ba1cc8acda0ad0a6299cb5
+    tag: afe0118339495c8ea2e950ff8c2629ee593e3949
   ml:
     repository: ghcr.io/reservoir-sandbox/ml-models
     tag: d0359cd6232fe2a7d471acc3928945f8b6208d6b
