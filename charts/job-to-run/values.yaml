@@ -10,7 +10,6 @@ sha256: ""
 # backend repo. Exactly one of staticReport/staticReportS3Key is non-empty.
 staticReport: ""
 staticReportS3Key: ""
-
 # LLM summarizer (see LLM_integration.md) - external to this cluster, reached
 # over its public IP since the cluster isn't in the Yandex VPC. Its security
 # group must allow inbound TCP 8000 from this cluster's egress IP.
@@ -23,7 +22,7 @@ summarizer:
 workers:
   static:
     repository: ghcr.io/reservoir-sandbox/reverse
-    tag: cbe715ecaa60338c5b9b89b3aa22a19f27bc56b3
+    tag: 2861f3475732a5b8e5013853113ee352f75b01ba
   sandbox:
     repository: ghcr.io/reservoir-sandbox/auto-yara
     tag: 1018cf940644994118ba1cc8acda0ad0a6299cb5
