@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/reservoir-sandbox/frontend:7929bf9f8e6e26fcf2267a5f4d842e2e0d2873a4
+          image: ghcr.io/reservoir-sandbox/frontend:9ea6137cd9f2df3ed412efdd59e9dc50413f90ee
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
