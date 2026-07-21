@@ -22,7 +22,7 @@ summarizer:
 workers:
   static:
     repository: ghcr.io/reservoir-sandbox/reverse
-    tag: 2861f3475732a5b8e5013853113ee352f75b01ba
+    tag: 0fdeee4f552b579e526ed52faff3858414829d7e
   sandbox:
     repository: ghcr.io/reservoir-sandbox/auto-yara
     tag: afe0118339495c8ea2e950ff8c2629ee593e3949
