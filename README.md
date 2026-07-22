@@ -41,11 +41,11 @@ ingress-nginx (infrastructure ns)
   |
   +-- path /api   -> backend :8000   (FastAPI, apps ns)
                         |
-          +-------------+-------------+
-          |             |             |
-          v             v             v
-     PostgreSQL       Redis      Kubernetes API
-     (apps ns)       (apps ns)   -> backend creates a HelmRelease (jobs ns)
+          +-------------+-------------+---------------+
+          |             |             |               |
+          v             v             v               v
+     PostgreSQL       Redis        Garage S3          Kubernetes API
+     (apps ns)      (apps ns)   (infrastructure ns)   -> backend creates a HelmRelease (jobs ns)
 ```
 
 ### Job fan-out (one upload, three workers)
