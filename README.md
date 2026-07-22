@@ -75,11 +75,7 @@ Each worker Job is fire-and-forget: `restartPolicy: Never`, `backoffLimit: 2`, `
 - `flux get helmreleases -A` lists every in-flight analysis job
 - the backend's Kubernetes RBAC surface is `create`/`get`/`list` on `HelmRelease` only — it never touches the Job/Pod API directly
 
-**Why Helm.** The chart's parameterization (`taskType`, `workers.<type>`) is
-what lets one chart serve three different worker images from one values
-file, and gives every launched job a release name and history Flux already
-tracks — instead of the backend templating raw Job YAML per task type by
-hand.
+**Why Helm.** The chart's parameterization (`taskType`, `workers.<type>`) is what lets one chart serve three different worker images from one values file, and gives every launched job a release name and history Flux already tracks — instead of the backend templating raw Job YAML per task type by hand.
 
 ---
 
@@ -96,9 +92,7 @@ Five repositories, each with its own CI, converging on one cluster:
 | **auto-yara** | `sandbox` worker | `charts/job-to-run/values.yaml` -> `workers.sandbox.tag` |
 | **ml-models** | `ml` worker | `charts/job-to-run/values.yaml` -> `workers.ml.tag` |
 
-`gitops-deployment` holds every manifest and chart; each app/worker repo owns
-its own CI and only writes back the field for its own image. Nobody needs
-write access to another repo's source.
+`gitops-deployment` holds every manifest and chart; each app/worker repo owns its own CI and only writes back the field for its own image. Nobody needs write access to another repo's source.
 
 ### Lifecycle, on push to `main`
 
