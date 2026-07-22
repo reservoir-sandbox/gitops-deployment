@@ -160,7 +160,6 @@ retry exists, the tag bump is currently re-applied by hand when it happens.
 
 | Problem | Where | What was done |
 |---|---|---|
-| `ml` task needs the `static` task's output before it can run | `charts/job-to-run/templates/job.yaml` | The `taskType: ml` branch is the only one that renders `STATIC_REPORT` / `STATIC_REPORT_S3_KEY` / summarizer env vars. Backend only creates the `ml` HelmRelease after the `static` task reaches a terminal state. |
 | Garage bootstrap re-run would otherwise rotate credentials on every reconcile | `infrastructure/s3/garage-backend-key-init-job.yaml` | The Job checks whether the access key already in the Secret still validates against Garage's admin API before minting a new one — re-running it is idempotent. |
 | CI auto-commit race (§2) | All 5 repos' workflows | Documented, not yet fixed; no `git pull --rebase` retry before push. |
 
