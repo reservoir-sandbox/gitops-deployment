@@ -152,7 +152,7 @@ retry exists, the tag bump is currently re-applied by hand when it happens.
 | External LLM VM on a public IP | `charts/job-to-run/values.yaml` (`summarizer.url`), `LLM_integration.md` | Doc recommends a private VPC IP with security-group restriction; deployment uses the public IP with a manually opened security-group rule. |
 | No Pod Security Standards | `infrastructure/security/namespaces.yaml` | No `pod-security.kubernetes.io/*` labels set at namespace level. |
 | Shared `PAT_TOKEN` | CI secrets in `backend`, `reverse`, `auto-yara`, `ml-models` | One repo-scoped PAT with write access to `gitops-deployment`, reused as a CI secret across four repos. |
-| Hardcoded PAT in `flux-run.sh` | Local-only, gitignored, dev-cluster bootstrap | Never reached Git history; prod bootstrap uses a `GITHUB_TOKEN` env var instead. |
+
 
 ---
 
