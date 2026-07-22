@@ -1,201 +1,197 @@
-# gitops-deployment
+# Reservoir — Infrastructure Engineering Report
 
-Flux-managed GitOps repo for the Reservoir stack (frontend, backend, Postgres,
-Redis, Garage S3, nginx ingress). Two clusters reconcile from this repo:
+DevOps specification for Reservoir: what runs, what deploys it, and what
+decisions were made building the cluster side of this project. Scope is
+infrastructure — manifests, charts, CI/CD, cluster config — not application
+internals.
 
-| Cluster | Purpose | Runtime |
+Stack: GitHub Actions (CI), GHCR (image registry), Kubernetes / k3s
+(runtime), Flux CD (GitOps controller), Kustomize (manifest composition),
+Helm (chart templating and release management).
+
+---
+
+## 1. High-level architecture
+
+The project consists of:
+
+- 2 applications: frontend, backend
+- 3 analysis scripts, each run as a Job: `reverse` (static analysis),
+  `auto-yara` (sandbox / YARA rule synthesis), `ml-models` (LLM summarizer
+  relay)
+- 6 infrastructure services: PostgreSQL, Redis, Garage (S3-compatible object
+  store), ingress-nginx, Flux, external LLM summarizer
+
+Two Flux-managed clusters reconcile from the same `./apps` and
+`./infrastructure` Kustomize trees: `clusters/dev-cluster` (k3d, local) and
+`clusters/prod-cluster` (k3s, single VM `10.93.27.36`). Same manifests, no
+per-environment fork. The LLM summarizer runs on a separate Yandex Cloud VM
+outside the cluster network, reached over its public IP.
+
+### Request path
+
+```
+Browser
+  |  HTTPS
+  v
+ingress-nginx (infrastructure ns)
+  |
+  +-- path /      -> frontend :3000  (React/Vite SPA, apps ns)
+  |
+  +-- path /api   -> backend :8000   (FastAPI, apps ns)
+                        |
+          +-------------+-------------+
+          |             |             |
+          v             v             v
+     PostgreSQL       Redis      Kubernetes API
+     (apps ns)       (apps ns)   -> backend creates a HelmRelease (jobs ns)
+```
+
+### Job fan-out (one upload, three workers)
+
+```
+Flux reconciles the HelmRelease
+  |
+  v
+charts/job-to-run (jobs ns)              <- one chart, three task types
+  |
+  +-- taskType=static  -> reverse worker    -> Garage (S3, if report > 1 MB)
+  |
+  +-- taskType=sandbox -> auto-yara worker  -> Garage
+  |
+  +-- taskType=ml      -> ml-models worker  -> external LLM VM (public IP)
+       (only launched once static is terminal - see chart notes below)
+
+all three POST their result to the backend's internal callback endpoint,
+bearer-authed against worker-callback-secret
+```
+
+Each worker Job is fire-and-forget: `restartPolicy: Never`, `backoffLimit: 2`,
+`ttlSecondsAfterFinished: 300` — the Job self-cleans, nothing else has to
+garbage-collect finished pods.
+
+**Script-as-a-Job.** Every analysis run is a Kubernetes `Job`, one per
+`(sample, taskType)` pair, templated from a single shared chart,
+`charts/job-to-run`. `taskType` (`static` / `sandbox` / `ml`) selects the
+worker image via `(index .Values.workers .Values.taskType)` in
+`templates/job.yaml`, and, only when `taskType: ml`, the template renders an
+extra block of env vars (`RESERVOIR_SUMMARIZER_URL`,
+`RESERVOIR_SUMMARIZER_TIMEOUT_SECONDS`, `STATIC_REPORT`,
+`STATIC_REPORT_S3_KEY`). One chart, one values file, three worker images.
+
+**Backend -> Flux -> Helm -> Job.** The backend does not call the Kubernetes
+Job API directly. It creates a Flux `HelmRelease` object (`K8sJobLauncher`,
+backend's own service) targeting `charts/job-to-run`; Flux's helm-controller
+performs the `helm install`. Consequences of that design:
+
+- job launches inherit Flux's reconciliation and retry semantics
+- `flux get helmreleases -A` lists every in-flight analysis job
+- the backend's Kubernetes RBAC surface is `create`/`get`/`list` on
+  `HelmRelease` only — it never touches the Job/Pod API directly
+
+**Why Helm.** The chart's parameterization (`taskType`, `workers.<type>`) is
+what lets one chart serve three different worker images from one values
+file, and gives every launched job a release name and history Flux already
+tracks — instead of the backend templating raw Job YAML per task type by
+hand.
+
+---
+
+## 2. Poly-repo architecture and CI/CD pipeline
+
+Five repositories, each with its own CI, converging on one cluster:
+
+| Repo | Owns | CI writes to |
 |---|---|---|
-| `clusters/dev-cluster` | local sandbox | k3d (`k3d-start.sh`) |
-| `clusters/prod-cluster` | production | k3s on a VM |
+| **gitops-deployment** | All K8s manifests, the shared `job-to-run` chart, Flux bootstrap for both clusters | — (target of every other repo's CI) |
+| **backend** | FastAPI app, Alembic migrations, `K8sJobLauncher` | `apps/backend/deployment.yaml` |
+| **frontend** | React/Vite SPA | `apps/frontend/deployment.yaml` |
+| **reverse** | `static` worker | `charts/job-to-run/values.yaml` -> `workers.static.tag` |
+| **auto-yara** | `sandbox` worker | `charts/job-to-run/values.yaml` -> `workers.sandbox.tag` |
+| **ml-models** | `ml` worker | `charts/job-to-run/values.yaml` -> `workers.ml.tag` |
 
-Both point at the same `./apps` and `./infrastructure` trees, so anything
-merged to `main` rolls out to both.
+`gitops-deployment` holds every manifest and chart; each app/worker repo owns
+its own CI and only writes back the field for its own image. Nobody needs
+write access to another repo's source.
 
-## Layout
+### Lifecycle, on push to `main`
 
-- `infrastructure/` — namespaces, Helm repo sources, ingress-nginx,
-  StorageClass, Garage (S3) and its bucket/key provisioning job.
-- `apps/` — frontend, backend, Postgres, Redis.
-- `charts/job-to-run/` — the one Helm chart used for all three analysis
-  worker `Job`s the backend launches per sample (see
-  [Analysis worker images](#analysis-worker-images-chartsjob-to-run)).
-- `clusters/<name>/flux-system/` — per-cluster Flux bootstrap + the two
-  top-level `Kustomization`s (`cluster-infrastructure`, `cluster-apps`).
-- `.sops.yaml` — encryption rule: any `*-secret.yaml` file has its
-  `data`/`stringData` fields encrypted with age; everything else in the file
-  stays plaintext so diffs stay readable.
+```
+source repo CI:
+  1. build image, push to ghcr.io/reservoir-sandbox/<repo>:<commit-sha>
+     (backend only: gated by lint-test - black, ruff, mypy, pytest)
+  2. checkout gitops-deployment (PAT_TOKEN)
+  3. yq-patch the relevant manifest / chart value with the new tag
+  4. commit as github-actions[bot], push to gitops-deployment main
 
-## Secrets (SOPS + age)
+gitops-deployment main -> Flux polls -> reconciles -> new image running
+```
 
-Files matching `*-secret.yaml` are committed **encrypted**. Flux's
-kustomize-controller decrypts them at apply time using an age private key
-stored as a `Secret` named `sops-age` in the `flux-system` namespace of each
-cluster — that secret is created out-of-band, never committed.
+Per repo:
 
-- Encrypt a new secret file: `sops --encrypt --in-place path/to/foo-secret.yaml`
-- Edit an existing one in place: `sops path/to/foo-secret.yaml`
-- Decrypt to inspect: `sops --decrypt path/to/foo-secret.yaml`
+- **backend**: `yq` patches both `containers[].image` and
+  `initContainers[].image` in `apps/backend/deployment.yaml` in one call —
+  the init container runs the Alembic migration ahead of the app container,
+  so both move in lockstep.
+- **frontend**: patches `apps/frontend/deployment.yaml`'s single container
+  image.
+- **reverse / auto-yara / ml-models**: `yq eval -i
+  ".workers.<taskType>.tag = \"$SHA\""` against
+  `charts/job-to-run/values.yaml`.
 
-`sops`/`age` are in the nix devShell (`direnv allow` or `nix develop`).
+Image tags are always the full commit SHA (`docker/metadata-action`,
+`type=sha,format=long`), never `latest` or a branch name — `main` in
+`gitops-deployment` fully determines what's running.
 
-The current age keypair's **public** key is in `.sops.yaml`. The **private**
-key was generated once during setup and was never committed — it must be
-loaded into any cluster (dev or prod) that needs to decrypt, and kept
-somewhere durable (password manager / secret store) since losing it means
-re-encrypting every secret file with a new key. It has already been loaded
-into the running dev-cluster.
+Each source repo's CI needs its own repo-scoped `PAT_TOKEN` secret (write
+access to `gitops-deployment`); set up manually, per repo, out of band.
 
-## Deploying to a fresh production VM
+**Known gap:** two CI runs landing within the same push window can race on
+the `git push` into `gitops-deployment` (non-fast-forward); no automatic
+retry exists, the tag bump is currently re-applied by hand when it happens.
 
-Prerequisites on your workstation: `flux`, `sops`, `age`, `kubectl` (all in
-the nix devShell), a GitHub PAT with repo access for bootstrap, and SSH
-access to the VM.
+---
 
-1. **Install k3s on the VM** (Traefik disabled — we run our own ingress-nginx):
-   ```sh
-   curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server \
-    --disable=traefik \
-    --disable=servicelb \
-    --disable=local-storage \
-    --disable=metrics-server \
-    --kubelet-arg=--cgroup-driver=systemd" sh -
-   ```
-   Copy `/etc/rancher/k3s/k3s.yaml` back to your workstation as your
-   kubeconfig (swap `127.0.0.1` for the VM's address), or run the remaining
-   steps over SSH with `kubectl` on the VM directly.
+## 3. Security and its gaps
 
-2. **Bootstrap Flux**, pointing at the prod path:
-   ```sh
-   export GITHUB_TOKEN=<pat with repo scope>
-   flux bootstrap github \
-     --owner=reservoir-sandbox --repository=gitops-deployment \
-     --branch=main --path=./clusters/prod-cluster --token-auth
-   ```
-   This creates the `flux-system` namespace/controllers and commits
-   `gotk-components.yaml`/`gotk-sync.yaml` into
-   `clusters/prod-cluster/flux-system/` (the `apps.yaml`/`infrastructure.yaml`
-   Kustomizations already exist in the repo).
+### In place
 
-3. **Load the SOPS decryption key** — do this before step 2's Kustomizations
-   reconcile, or they'll fail with a decryption error:
-   ```sh
-   kubectl -n flux-system create secret generic sops-age \
-     --from-file=age.agekey=/path/to/age.agekey
-   ```
-   Get `age.agekey` (the private key) from wherever it was stored when
-   generated — see [Secrets](#secrets-sops--age) above. Reuse the same key
-   for every cluster rather than minting a new one per environment, unless
-   you deliberately want to scope secrets per-cluster (in which case give
-   each its own `path_regex`/key pair in `.sops.yaml`).
-
-4. **Verify**:
-   ```sh
-   flux get kustomizations -A
-   kubectl get pods -A
-   ```
-   `ingress-nginx` gets a `LoadBalancer` Service; k3s's built-in ServiceLB
-   binds it straight to the VM's ports 80/443 — no MetalLB needed for a
-   single-node setup. Once pods are ready:
-   ```sh
-   curl http://<vm-ip>/           # frontend
-   curl http://<vm-ip>/api/health/live   # backend
-   ```
-
-## Storage
-
-`infrastructure/storage/local-path-storageclass.yaml` declares the
-`local-path` StorageClass explicitly (provisioner: k3s's bundled
-local-path-provisioner) instead of relying silently on k3s's default. Its
-spec is intentionally identical to what k3s creates on its own — don't change
-`reclaimPolicy` without disabling k3s's built-in `local-storage` addon first,
-or the two will fight on every k3s restart / Flux reconcile.
-
-Local-path volumes live on a single node's disk with no redundancy. For
-anything you can't afford to lose (Postgres data, Garage bucket contents),
-set up off-box backups — e.g. a CronJob doing `pg_dump` into the `garage`
-bucket, or periodic volume snapshots — this repo doesn't do that yet.
-
-## Analysis worker images (`charts/job-to-run`)
-
-Each sample upload spawns one-shot Kubernetes `Job`s — one per `TaskType`
-(`static`, `sandbox`, `ml`) — via a Flux `HelmRelease` that the backend
-creates at runtime (see `backend`'s `K8sJobLauncher`). All three use the
-single chart at `charts/job-to-run`, which picks the worker image by task
-type from `charts/job-to-run/values.yaml`:
-
-| Task type | Source repo | What it does |
+| Control | Where | What it does |
 |---|---|---|
-| `static` | `reverse` | ELF structural analysis (headers, sections, disassembly, checksec) |
-| `sandbox` | `auto-yara` | Generates a YARA detection rule from the sample |
-| `ml` | `ml-models` | Forwards the static report to an external LLM summarizer and relays its verdict |
+| Secrets encryption | `.sops.yaml` (SOPS + age) | Encrypts `data`/`stringData` in any `*-secret.yaml`; age private key never committed, loaded per cluster as the `sops-age` Secret. |
+| NetworkPolicy | `apps/backend/networkpolicy.yaml`, `infrastructure/jobs/networkpolicy.yaml` | Default-deny. Backend ingress: only from `ingress-nginx` and the `jobs` namespace. Backend egress: Postgres 5432, Redis 6379, Garage 3900, K8s API 6443 on both the ClusterIP (`10.43.0.1/32`) and the node IP (`10.93.27.36/32`) — required because this cluster's NetworkPolicy enforcement evaluates the post-DNAT destination for Service traffic. `jobs` namespace egress whitelists a single `/32` for the external LLM VM. |
+| RBAC | `infrastructure/jobs/rbac.yaml`, `infrastructure/s3/garage-backend-key-init-job.yaml` | Backend ServiceAccount: `create`/`get`/`list` on `HelmRelease` in `jobs` ns only. Garage bootstrap ServiceAccount: `create`/`get`/`update`/`patch` on one named Secret (`backend-s3-credentials`) in `apps` + `jobs` ns. |
+| Non-root containers | `backend/Dockerfile` | Dedicated `fastapi` system user, `USER fastapi` before `CMD`. |
 
-`static` and `sandbox` launch immediately, in parallel, like any other task.
-`ml` does not — it consumes `static`'s output, so the backend only launches
-it once `static` reaches a terminal state
-(`JobService._maybe_launch_ml` in the backend repo). If `static` fails, `ml`
-is marked failed immediately with no Job launched (nothing to summarize).
+### Gaps
 
-`static`/`sandbox` implement the shared worker contract: download the sample
-from S3 via `S3_OBJECT_KEY`, run the analysis, upload the report to S3 if
-it's over 1MB, then `POST` the result to the backend's internal callback
-endpoint using `WORKER_CALLBACK_SECRET`. `ml` skips the S3 sample download
-entirely — it never touches the raw binary — and instead reads the static
-report the backend hands it (`STATIC_REPORT` inline, or `STATIC_REPORT_S3_KEY`
-if the static report itself was too big to inline), POSTs it to
-`RESERVOIR_SUMMARIZER_URL/api/v1/summarize-static`, and relays the response
-verbatim as its own result (this is exactly the `MLReportData` shape the
-frontend's `MLReport` component expects — see `LLM_integration.md`).
-`yara_matches` is intentionally omitted from that request: `auto-yara`
-*generates* a rule from the sample, it doesn't *match* against a corpus of
-known signatures, so it has nothing in the shape the summarizer's optional
-`yara_matches` field expects.
+| Gap | Where | State |
+|---|---|---|
+| No TLS termination | `apps/frontend/ingress.yaml`, `apps/backend/ingress.yaml` | `ssl-redirect: "false"`, no `tls:` block, no cert-manager `ClusterIssuer` anywhere in the repo. |
+| External LLM VM on a public IP | `charts/job-to-run/values.yaml` (`summarizer.url`), `LLM_integration.md` | Doc recommends a private VPC IP with security-group restriction; deployment uses the public IP with a manually opened security-group rule. |
+| No Pod Security Standards | `infrastructure/security/namespaces.yaml` | No `pod-security.kubernetes.io/*` labels set at namespace level. |
+| Shared `PAT_TOKEN` | CI secrets in `backend`, `reverse`, `auto-yara`, `ml-models` | One repo-scoped PAT with write access to `gitops-deployment`, reused as a CI secret across four repos. |
+| Hardcoded PAT in `flux-run.sh` | Local-only, gitignored, dev-cluster bootstrap | Never reached Git history; prod bootstrap uses a `GITHUB_TOKEN` env var instead. |
 
-Common env vars (`S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_ENDPOINT_URL`,
-`S3_BUCKET_NAME`, `S3_OBJECT_KEY`, `TASK_ID`, `BACKEND_CALLBACK_URL`,
-`WORKER_CALLBACK_SECRET`) are injected by the chart's `templates/job.yaml`
-for every task type; S3 credentials come from the `backend-s3-credentials`
-Secret, which `infrastructure/s3/garage-backend-key-init-job.yaml` mirrors
-into both the `apps` and `jobs` namespaces. `RESERVOIR_SUMMARIZER_URL`,
-`RESERVOIR_SUMMARIZER_TIMEOUT_SECONDS`, `STATIC_REPORT`, and
-`STATIC_REPORT_S3_KEY` are only injected for `taskType: ml`.
+---
 
-### LLM summarizer (external, not managed by this repo)
+## 4. Specific engineering solutions
 
-The summarizer runs on a Yandex Cloud VM outside this cluster — see
-`LLM_integration.md` for the full DevOps handoff (systemd units, log
-locations, deploy process). This cluster is **not** in the Yandex VPC, so
-`charts/job-to-run/values.yaml`'s `summarizer.url` points at its **public**
-IP (`158.160.219.46:8000`), not the private one the guide recommends for
-same-VPC setups.
+| Problem | Where | What was done |
+|---|---|---|
+| `ml` task needs the `static` task's output before it can run | `charts/job-to-run/templates/job.yaml` | The `taskType: ml` branch is the only one that renders `STATIC_REPORT` / `STATIC_REPORT_S3_KEY` / summarizer env vars. Backend only creates the `ml` HelmRelease after the `static` task reaches a terminal state. |
+| Garage bootstrap re-run would otherwise rotate credentials on every reconcile | `infrastructure/s3/garage-backend-key-init-job.yaml` | The Job checks whether the access key already in the Secret still validates against Garage's admin API before minting a new one — re-running it is idempotent. |
+| CI auto-commit race (§2) | All 5 repos' workflows | Documented, not yet fixed; no `git pull --rebase` retry before push. |
 
-**Manual step required, outside this repo**: the Yandex VM's security group
-must allow inbound TCP 8000 from this cluster's egress IP. Nothing here can
-configure that — it's Yandex Cloud console/CLI access on the VM owner's
-side. `infrastructure/jobs/networkpolicy.yaml` only controls the outbound
-side (cluster → VM); it doesn't help if the VM's own firewall still rejects
-the connection.
+---
 
-**Updating a worker script**: edit the relevant repo (`reverse`,
-`auto-yara`, or `ml-models`), push to `main`. Each has a `.github/workflows/ci.yml`
-that builds and pushes the image to `ghcr.io/reservoir-sandbox/<repo>:<sha>`,
-then opens a commit against **this** repo bumping
-`charts/job-to-run/values.yaml`'s `workers.<taskType>.tag` — the same
-auto-tag-bump pattern the `backend` repo uses for its own deployment. Flux
-picks it up from there; no manual manifest edits needed. Each of those three
-repos needs a `PAT_TOKEN` secret (repo-scoped GitHub PAT with write access to
-`gitops-deployment`) configured in its own GitHub Actions settings, same as
-`backend` already has.
+## 5. Scaling strategy
 
-If two of these CI runs land within the same ~minute, the second's
-auto-commit push can lose a non-fast-forward race against the first (seen in
-practice) — check `gh run list --repo reservoir-sandbox/<repo>` after
-pushing more than one at once, and manually re-apply the tag bump in
-`charts/job-to-run/values.yaml` if a run failed on that step.
-
-## Known gap
-
-`flux-run.sh` (gitignored, not committed) has a hardcoded GitHub PAT used for
-the dev-cluster bootstrap. It never reached git history, but treat it as
-compromised anyway (rotate it) and don't repeat the pattern for prod — pass
-`GITHUB_TOKEN` as an env var from your shell/secret manager instead, as
-step 2 above does.
+| Tier | Current state |
+|---|---|
+| App (frontend, backend) | Stateless `Deployment` + `Service`, `replicas: 1`. |
+| Storage (Postgres, Redis, Garage) | Single-node `local-path` StorageClass (`infrastructure/storage/local-path-storageclass.yaml`). |
+| Analysis workers | One Job per upload (`charts/job-to-run`); concurrency bounded by per-worker `resources` in `values.yaml` (200m/1000m CPU, 256Mi/1Gi memory requests/limits) against node capacity. |
+| LLM summarizer | Single external VM, single-threaded Ollama inference (~2-3 min/call per `LLM_integration.md`). |
+| Autoscaling | None configured — no `HorizontalPodAutoscaler`, no cluster-autoscaler. |
+| Environments | Two Flux clusters (`dev-cluster` k3d, `prod-cluster` k3s) reconcile the same `./apps`/`./infrastructure` trees. |
