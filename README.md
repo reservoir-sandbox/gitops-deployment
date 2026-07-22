@@ -144,7 +144,7 @@ Image tags are always the full commit SHA (`docker/metadata-action`,
 `gitops-deployment` fully determines what's running.
 
 Each source repo's CI needs its own repo-scoped `PAT_TOKEN` secret (write
-access to `gitops-deployment`); set up manually, per repo, out of band.
+access to `gitops-deployment`); set up manually, per organization, out of band.
 
 **Known gap:** two CI runs landing within the same push window can race on
 the `git push` into `gitops-deployment` (non-fast-forward); no automatic
