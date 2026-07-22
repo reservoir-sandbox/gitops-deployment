@@ -11,7 +11,8 @@ Stack:
 - Kubernetes / k3s (runtime);
 - Flux CD (GitOps controller);
 - Kustomize (manifest composition);
-- Helm (chart templating and release management).
+- Helm (chart templating and release management);
+- Nix (package manager for configuring devshell - developer environment. Local usage only).
 
 ---
 
