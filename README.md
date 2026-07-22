@@ -5,9 +5,13 @@ decisions were made building the cluster side of this project. Scope is
 infrastructure — manifests, charts, CI/CD, cluster config — not application
 internals.
 
-Stack: GitHub Actions (CI), GHCR (image registry), Kubernetes / k3s
-(runtime), Flux CD (GitOps controller), Kustomize (manifest composition),
-Helm (chart templating and release management).
+Stack: 
+- GitHub Actions (CI);
+- GHCR (image registry);
+- Kubernetes / k3s (runtime);
+- Flux CD (GitOps controller);
+- Kustomize (manifest composition);
+- Helm (chart templating and release management).
 
 ---
 
@@ -22,11 +26,7 @@ The project consists of:
 - 6 infrastructure services: PostgreSQL, Redis, Garage (S3-compatible object
   store), ingress-nginx, Flux, external LLM summarizer
 
-Two Flux-managed clusters reconcile from the same `./apps` and
-`./infrastructure` Kustomize trees: `clusters/dev-cluster` (k3d, local) and
-`clusters/prod-cluster` (k3s, single VM `10.93.27.36`). Same manifests, no
-per-environment fork. The LLM summarizer runs on a separate Yandex Cloud VM
-outside the cluster network, reached over its public IP.
+Two Flux-managed clusters reconcile from the same `./apps` and `./infrastructure` Kustomize trees: `clusters/dev-cluster` (k3d, local) and `clusters/prod-cluster` (k3s, single VM `10.93.27.36`). Same manifests, no per-environment fork. The LLM summarizer runs on a separate Yandex Cloud VM outside the cluster network, reached over its public IP.
 
 ### Request path
 
@@ -62,32 +62,18 @@ charts/job-to-run (jobs ns)              <- one chart, three task types
   +-- taskType=ml      -> ml-models worker  -> external LLM VM (public IP)
        (only launched once static is terminal - see chart notes below)
 
-all three POST their result to the backend's internal callback endpoint,
-bearer-authed against worker-callback-secret
+all three POST their result to the backend's internal callback endpoint, bearer-authed against worker-callback-secret
 ```
 
-Each worker Job is fire-and-forget: `restartPolicy: Never`, `backoffLimit: 2`,
-`ttlSecondsAfterFinished: 300` — the Job self-cleans, nothing else has to
-garbage-collect finished pods.
+Each worker Job is fire-and-forget: `restartPolicy: Never`, `backoffLimit: 2`, `ttlSecondsAfterFinished: 300` — the Job self-cleans, nothing else has to garbage-collect finished pods.
 
-**Script-as-a-Job.** Every analysis run is a Kubernetes `Job`, one per
-`(sample, taskType)` pair, templated from a single shared chart,
-`charts/job-to-run`. `taskType` (`static` / `sandbox` / `ml`) selects the
-worker image via `(index .Values.workers .Values.taskType)` in
-`templates/job.yaml`, and, only when `taskType: ml`, the template renders an
-extra block of env vars (`RESERVOIR_SUMMARIZER_URL`,
-`RESERVOIR_SUMMARIZER_TIMEOUT_SECONDS`, `STATIC_REPORT`,
-`STATIC_REPORT_S3_KEY`). One chart, one values file, three worker images.
+**Script-as-a-Job.** Every analysis run is a Kubernetes `Job`, one per `(sample, taskType)` pair, templated from a single shared chart, `charts/job-to-run`. `taskType` (`static` / `sandbox` / `ml`) selects the worker image via `(index .Values.workers .Values.taskType)` in `templates/job.yaml`, and, only when `taskType: ml`, the template renders an extra block of env vars (`RESERVOIR_SUMMARIZER_URL`, `RESERVOIR_SUMMARIZER_TIMEOUT_SECONDS`, `STATIC_REPORT`, `STATIC_REPORT_S3_KEY`). One chart, one values file, three worker images.
 
-**Backend -> Flux -> Helm -> Job.** The backend does not call the Kubernetes
-Job API directly. It creates a Flux `HelmRelease` object (`K8sJobLauncher`,
-backend's own service) targeting `charts/job-to-run`; Flux's helm-controller
-performs the `helm install`. Consequences of that design:
+**Backend -> Flux -> Helm -> Job.** The backend does not call the Kubernetes Job API directly. It creates a Flux `HelmRelease` object (`K8sJobLauncher`, backend's own service) targeting `charts/job-to-run`; Flux's helm-controller performs the `helm install`. Consequences of that design:
 
 - job launches inherit Flux's reconciliation and retry semantics
 - `flux get helmreleases -A` lists every in-flight analysis job
-- the backend's Kubernetes RBAC surface is `create`/`get`/`list` on
-  `HelmRelease` only — it never touches the Job/Pod API directly
+- the backend's Kubernetes RBAC surface is `create`/`get`/`list` on `HelmRelease` only — it never touches the Job/Pod API directly
 
 **Why Helm.** The chart's parameterization (`taskType`, `workers.<type>`) is
 what lets one chart serve three different worker images from one values
