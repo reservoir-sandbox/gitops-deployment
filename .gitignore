@@ -2,3 +2,4 @@
 *.sh
 .claude
 SECRET_KEY_SOPS.txt
+prod-config
